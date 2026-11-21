@@ -304,6 +304,10 @@ fun SettingsScreen(onBack: () -> Unit, onEditProfile: () -> Unit = {}) {
         }
 
         item {
+            AppUpdatesSettingsPanel()
+        }
+
+        item {
             SettingsSection(
                 title = "О приложении",
                 subtitle = "NNTC Schedule — расписание занятий второго корпуса"

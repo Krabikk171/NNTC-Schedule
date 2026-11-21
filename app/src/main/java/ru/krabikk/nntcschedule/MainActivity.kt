@@ -120,6 +120,8 @@ class MainActivity : ComponentActivity() {
         }
 
 
+        AppUpdateWorkScheduler.schedule(applicationContext)
+
         PDFBoxResourceLoader.init(
             applicationContext
         )

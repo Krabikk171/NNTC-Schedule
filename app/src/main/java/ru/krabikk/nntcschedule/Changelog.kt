@@ -13,6 +13,16 @@ object Changelog {
     val versions =
         listOf(
             ChangelogVersion(
+                version = "3.1.1-dev.1",
+                title = "Разработка: обновление APK через GitHub",
+                changes = listOf(
+                    "Добавлена отдельная проверка выпусков APK через GitHub Releases, не затрагивающая PDF-расписание.",
+                    "В настройках появились каналы Stable/Beta и ручная проверка новых версий.",
+                    "APK скачивается по согласию с проверкой SHA-256, номера сборки и сертификата подписи.",
+                    "Установка осуществляется только через системный установщик Android."
+                )
+            ),
+            ChangelogVersion(
                 version = "3.1.0",
                 title = "Релиз: расписание всех групп второго корпуса",
                 changes = listOf(
@@ -475,5 +485,5 @@ object Changelog {
 
 
     const val CURRENT_VERSION =
-        "3.1.0"
+        "3.1.1-dev.1"
 }
