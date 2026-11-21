@@ -16,10 +16,12 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
       - name: Ensure Android 37 SDK platform
-        run: sdkmanager --install 'platforms;android-37'
+        run: |
+          # ubuntu-latest already provides the Android command-line tools.
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager --install 'platforms;android-37'
       - name: Build and run JVM tests (unsigned)
         run: |
           chmod +x gradlew

@@ -4,7 +4,7 @@
   "base_archive": "NNTCSchedule_3.1.0_GitHub_ready_source.zip (GitHub main v3.1.0)",
   "android_build": "Not executed locally: Android SDK unavailable. GitHub Actions workflow added for CI.",
   "verified_source_file_hashes": {
-    ".github/workflows/android-ci.yml": "e270c1a3fdac733e1cc84659b2940776c1fd41d87b23a7946664b6f6b1519b84",
+    ".github/workflows/android-ci.yml": "800e573d2cf1653cdf2e5d15ffe4ee3bab5e14fe815bc26ae8441bcd58d58076",
     ".gitignore": "b3390e576f45aa383e7d2ccbac44b0c1969b1dfb5b9224a4f6905aa3b7bd7110",
     "ALPHA3_README_RU.md": "953676d7f6396e70cf45f2aff3447b7dbada955800eba17ac2c86321ad618cab",
     "ALPHA5_README_RU.md": "b7cc1d58fbc7f0e3b7042300c7b1bf5394e947f1c9f8488b69c1de7f75ad8d82",
