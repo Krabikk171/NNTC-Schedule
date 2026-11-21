@@ -20,11 +20,11 @@ class AppUpdatePolicyTest {
 
     @Test fun stableNeverSelectsPrerelease() {
         val result = AppUpdatePolicy.chooseUpdate(listOf(offer(37, true), offer(36)), 35, AppUpdateChannel.STABLE)
-        assertEquals(36, result?.versionCode)
+        assertEquals(36L, result?.versionCode)
     }
 
     @Test fun betaSelectsHighestAndDoesNotDowngrade() {
-        assertEquals(37, AppUpdatePolicy.chooseUpdate(
+        assertEquals(37L, AppUpdatePolicy.chooseUpdate(
             listOf(offer(36), offer(37, true)), 35, AppUpdateChannel.BETA)?.versionCode)
         assertNull(AppUpdatePolicy.chooseUpdate(listOf(offer(37)), 37, AppUpdateChannel.BETA))
     }
