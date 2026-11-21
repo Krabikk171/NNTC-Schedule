@@ -14,8 +14,8 @@ android {
         applicationId = "ru.krabikk.nntcschedule"
         minSdk = 24
         targetSdk = 37
-        versionCode = 35
-        versionName = "3.1.0"
+        versionCode = 36
+        versionName = "3.1.1-dev.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -49,6 +49,7 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     testImplementation(libs.junit)
+    testImplementation("org.json:json:20240303")
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)
