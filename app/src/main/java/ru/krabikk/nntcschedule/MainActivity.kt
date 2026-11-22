@@ -108,6 +108,9 @@ class MainActivity : ComponentActivity() {
             this
         )
 
+        // APK version check is separate from PDF timetable synchronization.
+        AppUpdateWorkScheduler.schedule(this)
+
 
         if (
             Build.VERSION.SDK_INT >=
@@ -119,6 +122,8 @@ class MainActivity : ComponentActivity() {
             )
         }
 
+
+        // Проверка новой версии APK раз в сутки. Не затрагивает обновление PDF.
 
         PDFBoxResourceLoader.init(
             applicationContext

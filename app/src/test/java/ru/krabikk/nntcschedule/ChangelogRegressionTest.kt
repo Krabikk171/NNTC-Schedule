@@ -7,7 +7,7 @@ import org.junit.Test
 class ChangelogRegressionTest {
     @Test
     fun releaseVersionMatchesTopEntry() {
-        assertEquals("3.1.0", Changelog.CURRENT_VERSION)
+        assertEquals("3.1.1-dev.1", Changelog.CURRENT_VERSION)
         assertEquals(Changelog.CURRENT_VERSION, Changelog.versions.first().version)
         assertTrue(Changelog.versions.first().changes.size >= 4)
         assertTrue(Changelog.versions.any { it.version == "3.0.0" && it.changes.size >= 18 })
