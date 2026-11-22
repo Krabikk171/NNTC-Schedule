@@ -4,7 +4,6 @@ import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
-import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -71,6 +70,33 @@ class AppUpdateMetadataTest {
         return json.toString()
     }
 
+    @Test fun offlineCheckSkipsNetworkAndNextCheckCanSucceed() {
+        assertThrows(IOException::class.java) {
+            runBlocking {
+                AppUpdateRepository.checkReleases(AppUpdateChannel.STABLE, 36, online = false) { _, _ ->
+                    error("Offline check attempted network access")
+                }
+            }
+        }
+        assertNull(check(36) { if (it.endsWith("update.json")) manifest().toString() else releaseWithManifest() })
+    }
+
+    @Test(timeout = 3000) fun deadlineCancelsPendingManifestAndReportsRetryableError() {
+        var cancelled = false
+        val failure = assertThrows(IOException::class.java) {
+            runBlocking {
+                AppUpdateRepository.checkReleases(AppUpdateChannel.STABLE, 36, timeoutMillis = 150) { url, _ ->
+                    if (url.endsWith("update.json")) {
+                        try { kotlinx.coroutines.awaitCancellation() } finally { cancelled = true }
+                    }
+                    releaseWithManifest()
+                }
+            }
+        }
+        assertTrue(cancelled)
+        assertTrue(failure.message.orEmpty().contains("вовремя"))
+    }
+
     @Test fun installedVersionIsCurrent() {
         assertNull(check(36) { if (it.endsWith("update.json")) manifest().toString() else releaseWithManifest() })
     }
@@ -87,7 +113,7 @@ class AppUpdateMetadataTest {
 
     @Test fun networkFailureCanBeRetried() {
         val error = assertThrows(IOException::class.java) { check { throw UnknownHostException() } }
-        assertTrue(error.cause is UnknownHostException)
+        assertTrue(generateSequence<Throwable>(error) { it.cause }.any { it is UnknownHostException })
         assertEquals(36L, check { if (it.endsWith("update.json")) manifest().toString() else releaseWithManifest() }?.versionCode)
     }
 
@@ -115,7 +141,7 @@ class AppUpdateMetadataTest {
         val actual = assertThrows(CancellationException::class.java) {
             check { if (it.endsWith("update.json")) throw cancelled else releaseWithManifest() }
         }
-        assertSame(cancelled, actual)
+        assertTrue(generateSequence<Throwable>(actual) { it.cause }.any { it === cancelled })
     }
 
     @Test fun checksumMismatchStopsVerification() {

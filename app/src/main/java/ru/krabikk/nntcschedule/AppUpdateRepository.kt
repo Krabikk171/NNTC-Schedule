@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -12,6 +14,15 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
@@ -41,6 +52,8 @@ object AppUpdateRepository {
     private const val MAX_METADATA_BYTES = 3 * 1024 * 1024
     private const val MAX_MANIFEST_BYTES = 32 * 1024
 
+    private val metadataClient by lazy { OkHttpClient.Builder().followSslRedirects(false).build() }
+
     @Suppress("DEPRECATION")
     fun installedVersionCode(context: Context): Long {
         val info = context.packageManager.getPackageInfo(context.packageName, 0)
@@ -50,17 +63,31 @@ object AppUpdateRepository {
 
     suspend fun check(context: Context, channel: AppUpdateChannel): AppUpdateOffer? =
         withContext(Dispatchers.IO) {
-            checkReleases(channel, installedVersionCode(context)) { url, limit ->
-                currentCoroutineContext().ensureActive()
-                fetchText(url, limit)
-            }
+            val networks = context.getSystemService(ConnectivityManager::class.java)
+            val capabilities = networks.getNetworkCapabilities(networks.activeNetwork)
+            checkReleases(channel, installedVersionCode(context),
+                online = capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true,
+                read = ::fetchText)
         }
 
     internal suspend fun checkReleases(
         channel: AppUpdateChannel,
         installedCode: Long,
+        online: Boolean = true,
+        timeoutMillis: Long = 18_000,
         read: suspend (String, Int) -> String
     ): AppUpdateOffer? {
+        currentCoroutineContext().ensureActive()
+        if (!online) throw IOException("Нет подтверждённого подключения к интернету. Проверьте сеть и повторите попытку.")
+        val offers = withTimeoutOrNull(timeoutMillis) { readOffers(channel, read) }
+            ?: throw IOException("GitHub не ответил вовремя. Повторите проверку.")
+        return AppUpdatePolicy.chooseUpdate(offers, installedCode, channel)
+    }
+
+    private suspend fun readOffers(
+        channel: AppUpdateChannel,
+        read: suspend (String, Int) -> String
+    ): List<AppUpdateOffer> {
         val stable = channel == AppUpdateChannel.STABLE
         suspend fun readMetadata(url: String, manifest: Boolean): String {
             try {
@@ -98,7 +125,7 @@ object AppUpdateRepository {
                 offers += parseOffer(release, JSONObject(readMetadata(url, true)))
                     ?: throw JSONException("Неверные сведения об APK выпуска $tag")
             }
-            return AppUpdatePolicy.chooseUpdate(offers, installedCode, channel)
+            return offers
         } catch (e: JSONException) {
             throw IllegalArgumentException("Повреждены метаданные выпуска GitHub: ${e.message}", e)
         }
@@ -157,29 +184,36 @@ object AppUpdateRepository {
     private fun isOfficialAssetUrl(url: String, tag: String, name: String): Boolean =
         url == "$RELEASE_URL_PREFIX$tag/$name"
 
-    private fun fetchText(url: String, maxBytes: Int): String {
-        val connection = open(url)
-        try {
-            if (connection.responseCode != 200) throw IOException("GitHub HTTP ${connection.responseCode}")
-            if (connection.contentLengthLong > maxBytes) throw JSONException("Слишком большой ответ")
-            val stream = connection.inputStream
-            return stream.use { input ->
-                val output = java.io.ByteArrayOutputStream()
-                val buffer = ByteArray(8192)
-                var total = 0
-                while (true) {
-                    val read = input.read(buffer)
-                    if (read == -1) break
-                    total += read
-                    if (total > maxBytes) throw JSONException("Слишком большой ответ")
-                    output.write(buffer, 0, read)
+    private suspend fun fetchText(url: String, maxBytes: Int): String =
+        suspendCancellableCoroutine { continuation ->
+            val request = Request.Builder().url(url)
+                .header("Accept", "application/vnd.github+json")
+                .header("User-Agent", "NNTCSchedule-Android-Updater/3.1.1")
+                .build()
+            val call = metadataClient.newCall(request)
+            continuation.invokeOnCancellation { call.cancel() }
+            call.enqueue(object : Callback {
+                override fun onFailure(call: Call, e: IOException) {
+                    continuation.resumeWithException(e)
                 }
-                output.toString(Charsets.UTF_8.name())
-            }
-        } finally {
-            connection.disconnect()
+
+                override fun onResponse(call: Call, response: Response) {
+                    try {
+                        val text = response.use {
+                            if (it.code != 200) throw IOException("GitHub HTTP ${it.code}")
+                            val source = it.body.source()
+                            if (it.body.contentLength() > maxBytes || source.request(maxBytes + 1L)) {
+                                throw JSONException("Слишком большой ответ")
+                            }
+                            source.readUtf8()
+                        }
+                        continuation.resume(text)
+                    } catch (e: Exception) {
+                        continuation.resumeWithException(e)
+                    }
+                }
+            })
         }
-    }
 
     private fun open(url: String): HttpURLConnection {
         val parsed = URL(url)
