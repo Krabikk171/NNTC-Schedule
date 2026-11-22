@@ -37,8 +37,7 @@ class AppUpdateWorker(context: Context, params: WorkerParameters) : CoroutineWor
     } catch (_: IOException) {
         Result.retry()
     } catch (_: Exception) {
-        // Bad metadata must not crash periodic processing; retry on the next run.
-        Result.success()
+        Result.failure()
     }
 }
 

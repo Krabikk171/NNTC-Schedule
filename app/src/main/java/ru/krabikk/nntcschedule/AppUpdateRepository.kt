@@ -8,9 +8,12 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
@@ -25,7 +28,7 @@ import java.util.Locale
  * - the signed APK asset and GitHub's sha256 asset digest;
  * - update.json with packageName, versionName, versionCode and apkAssetName.
  *
- * If any required field is absent or inconsistent, the release is ignored.
+ * v3.1.0 predates update.json. Later eligible releases require valid metadata.
  */
 object AppUpdateRepository {
     private const val RELEASES_API =
@@ -47,33 +50,68 @@ object AppUpdateRepository {
 
     suspend fun check(context: Context, channel: AppUpdateChannel): AppUpdateOffer? =
         withContext(Dispatchers.IO) {
-            val releases = if (channel == AppUpdateChannel.STABLE) {
-                JSONArray().put(JSONObject(fetchText(STABLE_API, MAX_METADATA_BYTES)))
-            } else {
-                JSONArray(fetchText(RELEASES_API, MAX_METADATA_BYTES))
+            checkReleases(channel, installedVersionCode(context)) { url, limit ->
+                currentCoroutineContext().ensureActive()
+                fetchText(url, limit)
             }
-            val offers = mutableListOf<AppUpdateOffer>()
-            // Stable takes one release; Beta examines only the latest 20.
-            for (index in 0 until minOf(releases.length(), 20)) {
-                val release = releases.optJSONObject(index) ?: continue
-                if (release.optBoolean("draft", true)) continue
-                val prerelease = release.optBoolean("prerelease", false)
-                if (channel == AppUpdateChannel.STABLE && prerelease) continue
-                val tag = release.optString("tag_name")
-                if (!AppUpdatePolicy.validTag(tag)) continue
-                val assets = release.optJSONArray("assets") ?: continue
-                val manifestAsset = findAsset(assets, "update.json") ?: continue
-                val manifestUrl = manifestAsset.optString("browser_download_url")
-                if (!isOfficialAssetUrl(manifestUrl, tag, "update.json")) continue
-                try {
-                    val manifest = JSONObject(fetchText(manifestUrl, MAX_MANIFEST_BYTES))
-                    parseOffer(release, manifest)?.let(offers::add)
-                } catch (_: Exception) {
-                    // A malformed historical release must not block newer valid releases.
-                }
-            }
-            AppUpdatePolicy.chooseUpdate(offers, installedVersionCode(context), channel)
         }
+
+    internal suspend fun checkReleases(
+        channel: AppUpdateChannel,
+        installedCode: Long,
+        read: suspend (String, Int) -> String
+    ): AppUpdateOffer? {
+        val stable = channel == AppUpdateChannel.STABLE
+        suspend fun readMetadata(url: String, manifest: Boolean): String {
+            try {
+                return read(url, if (manifest) MAX_MANIFEST_BYTES else MAX_METADATA_BYTES)
+            } catch (e: java.net.UnknownHostException) {
+                throw IOException("Не удалось подключиться к GitHub. Проверьте подключение к интернету.", e)
+            } catch (e: java.net.ConnectException) {
+                throw IOException("Нет соединения с GitHub. Проверьте сеть и повторите попытку.", e)
+            } catch (e: IOException) {
+                val source = if (manifest) "загрузить update.json" else "получить список выпусков GitHub"
+                throw IOException("Не удалось $source: ${e.message}", e)
+            }
+        }
+
+        try {
+            val json = readMetadata(if (stable) STABLE_API else RELEASES_API, false)
+            val releases = if (stable) JSONArray().put(JSONObject(json)) else JSONArray(json)
+            val offers = mutableListOf<AppUpdateOffer>()
+            for (index in 0 until minOf(releases.length(), 20)) {
+                currentCoroutineContext().ensureActive()
+                val release = releases.getJSONObject(index)
+                if (release.getBoolean("draft") || (stable && release.getBoolean("prerelease"))) continue
+                val tag = release.getString("tag_name")
+                if (!AppUpdatePolicy.validTag(tag)) throw JSONException("Некорректный тег выпуска")
+                val assets = release.getJSONArray("assets")
+                val manifest = findAsset(assets, "update.json")
+                if (manifest == null) {
+                    if (predatesUpdateManifest(tag) && (0 until assets.length()).none {
+                            assets.getJSONObject(it).optString("name") == "update.json"
+                        }) continue
+                    throw JSONException("Для $tag недоступен update.json")
+                }
+                val url = manifest.getString("browser_download_url")
+                if (!isOfficialAssetUrl(url, tag, "update.json")) throw JSONException("Некорректный адрес update.json")
+                offers += parseOffer(release, JSONObject(readMetadata(url, true)))
+                    ?: throw JSONException("Неверные сведения об APK выпуска $tag")
+            }
+            return AppUpdatePolicy.chooseUpdate(offers, installedCode, channel)
+        } catch (e: JSONException) {
+            throw IllegalArgumentException("Повреждены метаданные выпуска GitHub: ${e.message}", e)
+        }
+    }
+
+    // The update manifest was introduced after the 3.1.0 release.
+    private fun predatesUpdateManifest(tag: String): Boolean {
+        val parts = tag.removePrefix("v").split('.', '-', limit = 4)
+        val major = parts[0].toIntOrNull() ?: return false
+        val minor = parts[1].toIntOrNull() ?: return false
+        val patch = parts[2].toIntOrNull() ?: return false
+        return major < 3 || (major == 3 && (minor < 1 || (minor == 1 && patch == 0)))
+    }
 
     internal fun parseOffer(release: JSONObject, manifest: JSONObject): AppUpdateOffer? {
         val tag = release.optString("tag_name")
@@ -123,7 +161,7 @@ object AppUpdateRepository {
         val connection = open(url)
         try {
             if (connection.responseCode != 200) throw IOException("GitHub HTTP ${connection.responseCode}")
-            if (connection.contentLengthLong > maxBytes) throw IOException("Metadata too large")
+            if (connection.contentLengthLong > maxBytes) throw JSONException("Слишком большой ответ")
             val stream = connection.inputStream
             return stream.use { input ->
                 val output = java.io.ByteArrayOutputStream()
@@ -133,7 +171,7 @@ object AppUpdateRepository {
                     val read = input.read(buffer)
                     if (read == -1) break
                     total += read
-                    if (total > maxBytes) throw IOException("Metadata too large")
+                    if (total > maxBytes) throw JSONException("Слишком большой ответ")
                     output.write(buffer, 0, read)
                 }
                 output.toString(Charsets.UTF_8.name())
@@ -207,7 +245,7 @@ object AppUpdateRepository {
             }
             if (total != offer.apkSizeBytes ||
                 digest.digest().hex() != offer.apkSha256
-            ) throw IOException("APK SHA-256 / size mismatch")
+            ) throw IOException("Размер или контрольная сумма загруженного APK не совпадает.")
             verifyApk(context, partial, offer.versionCode)
             if (finalFile.exists() && !finalFile.delete()) throw IOException("Cannot replace old APK")
             if (!partial.renameTo(finalFile)) throw IOException("Cannot save verified APK")
@@ -222,16 +260,16 @@ object AppUpdateRepository {
     }
 
     /** Returns false if the user must first allow installation from this source. */
-    fun requestSystemInstall(
+    suspend fun requestSystemInstall(
         context: Context, file: File, expectedCode: Long, expectedSha256: String
     ): Boolean {
-        if (!file.isFile || file.parentFile?.canonicalFile !=
-            File(context.cacheDir, "app_updates").canonicalFile
-        ) throw IOException("Invalid APK path")
-        if (!AppUpdatePolicy.validDigest(expectedSha256) || sha256File(file) != expectedSha256) {
-            throw IOException("Saved APK SHA-256 mismatch")
+        withContext(Dispatchers.IO) {
+            if (!file.isFile || file.parentFile?.canonicalFile !=
+                File(context.cacheDir, "app_updates").canonicalFile
+            ) throw IOException("Файл обновления недоступен. Загрузите APK повторно.")
+            verifyChecksum(file, expectedSha256)
+            verifyApk(context, file, expectedCode)
         }
-        verifyApk(context, file, expectedCode)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
             !context.packageManager.canRequestPackageInstalls()
         ) {
@@ -259,13 +297,13 @@ object AppUpdateRepository {
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
             PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
         val archive = pm.getPackageArchiveInfo(file.absolutePath, flags)
-            ?: throw IOException("Android cannot read APK")
+            ?: throw IOException("Android не удалось прочитать пакет обновления.")
         val installed = pm.getPackageInfo(context.packageName, flags)
         val archiveVersion = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
             archive.longVersionCode else archive.versionCode.toLong()
         if (archive.packageName != context.packageName || archiveVersion != expectedCode ||
             archiveVersion <= installedVersionCode(context)
-        ) throw IOException("Wrong package or versionCode")
+        ) throw IOException("Пакет или код версии APK не соответствует обновлению.")
         fun certificates(info: PackageInfo): Set<String> {
             val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
                 info.signingInfo?.apkContentsSigners?.toList().orEmpty()
@@ -278,7 +316,13 @@ object AppUpdateRepository {
         val downloadedSigners = certificates(archive)
         if (currentSigners.isEmpty() || downloadedSigners.isEmpty() ||
             currentSigners != downloadedSigners
-        ) throw IOException("APK is signed with a different key")
+        ) throw IOException("Подпись APK отличается от подписи установленного приложения.")
+    }
+
+    internal fun verifyChecksum(file: File, expected: String) {
+        if (!AppUpdatePolicy.validDigest(expected) || sha256File(file) != expected) {
+            throw IOException("Контрольная сумма APK не совпадает. Загрузите обновление заново.")
+        }
     }
 
     private fun sha256File(file: File): String {

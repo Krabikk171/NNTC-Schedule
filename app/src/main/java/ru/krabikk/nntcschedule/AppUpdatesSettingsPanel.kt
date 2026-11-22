@@ -44,6 +44,7 @@ fun AppUpdatesSettingsPanel() {
     var status by remember { mutableStateOf("Нажмите «Проверить», чтобы найти новую версию.") }
     var checking by remember { mutableStateOf(false) }
     var downloading by remember { mutableStateOf(false) }
+    var verifying by remember { mutableStateOf(false) }
     var progress by remember { mutableIntStateOf(0) }
 
     Card(
@@ -66,7 +67,7 @@ fun AppUpdatesSettingsPanel() {
                 AppUpdateChannel.BETA to "Beta · также тестовые версии"
             ).forEach { (option, title) ->
                 Row(
-                    modifier = Modifier.fillMaxWidth().clickable(enabled = !checking && !downloading) {
+                    modifier = Modifier.fillMaxWidth().clickable(enabled = !checking && !downloading && !verifying) {
                         channel = option
                         AppUpdatePreferences.setChannel(context, option)
                         offer = null
@@ -78,7 +79,7 @@ fun AppUpdatesSettingsPanel() {
                     RadioButton(
                         selected = channel == option,
                         onClick = {
-                            if (!checking && !downloading) {
+                            if (!checking && !downloading && !verifying) {
                                 channel = option
                                 AppUpdatePreferences.setChannel(context, option)
                                 offer = null
@@ -86,13 +87,13 @@ fun AppUpdatesSettingsPanel() {
                                 status = "Канал изменён. Нажмите «Проверить»."
                             }
                         },
-                        enabled = !checking && !downloading
+                        enabled = !checking && !downloading && !verifying
                     )
                     Text(title, style = MaterialTheme.typography.bodyMedium)
                 }
             }
             Button(
-                enabled = !checking && !downloading,
+                enabled = !checking && !downloading && !verifying,
                 onClick = {
                     scope.launch {
                         checking = true
@@ -129,17 +130,29 @@ fun AppUpdatesSettingsPanel() {
                         Text("Скачивание: $progress%")
                     }
                 } else if (downloaded != null) {
-                    Button(onClick = {
-                        try {
-                            val started = AppUpdateRepository.requestSystemInstall(
-                                context, downloaded!!, release.versionCode, release.apkSha256
-                            )
-                            status = if (started) "Следуйте инструкциям установщика Android."
-                            else "Разрешите установку из этого источника и вернитесь для повторного нажатия."
-                        } catch (e: Exception) {
-                            status = "Не удалось открыть установщик: ${e.localizedMessage}"
+                    Button(enabled = !verifying, onClick = {
+                        val file = downloaded
+                        if (file != null && !verifying) {
+                            verifying = true
+                            status = "Проверяем файл и подпись APK…"
+                            scope.launch {
+                                try {
+                                    val started = AppUpdateRepository.requestSystemInstall(
+                                        context, file, release.versionCode, release.apkSha256
+                                    )
+                                    status = if (started) "Следуйте инструкциям установщика Android."
+                                    else "Разрешите установку из этого источника и вернитесь для повторного нажатия."
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (e: Exception) {
+                                    downloaded = null
+                                    status = "Установка не началась: ${e.localizedMessage}"
+                                } finally {
+                                    verifying = false
+                                }
+                            }
                         }
-                    }) { Text("Установить через Android") }
+                    }) { Text(if (verifying) "Проверка APK…" else "Установить через Android") }
                 } else {
                     Button(onClick = {
                         scope.launch {
@@ -165,7 +178,7 @@ fun AppUpdatesSettingsPanel() {
                     offer = null
                     downloaded = null
                     status = "Обновление отложено."
-                }, enabled = !downloading) { Text("Позже") }
+                }, enabled = !downloading && !verifying) { Text("Позже") }
             }
             Text(
                 "Установка требует подтверждения Android. Если APK подписан другим ключом, обновление будет отклонено.",
