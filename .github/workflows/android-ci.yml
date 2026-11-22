@@ -19,9 +19,15 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Ensure Android 37 SDK platform
         run: |
-          # ubuntu-latest already provides the Android command-line tools.
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager --install 'platforms;android-37'
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$sdkmanager" ]]; then
+            sdkmanager="$(find "$ANDROID_HOME/cmdline-tools" -path '*/bin/sdkmanager' -type f -executable | sort -V | tail -n 1)"
+          fi
+          [[ -x "$sdkmanager" ]] || { echo "::error::Android SDK command-line tools missing"; exit 1; }
+          # yes exits on SIGPIPE after sdkmanager has accepted all licenses.
+          (set +o pipefail; yes | "$sdkmanager" --sdk_root="$ANDROID_HOME" --licenses >/dev/null)
+          "$sdkmanager" --sdk_root="$ANDROID_HOME" --install 'platforms;android-37.0' 'build-tools;36.0.0'
+          test -s "$ANDROID_HOME/platforms/android-37.0/android.jar"
       - name: Build and run JVM tests (unsigned)
         run: |
           chmod +x gradlew
