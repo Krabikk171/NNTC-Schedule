@@ -14,8 +14,8 @@ android {
         applicationId = "ru.krabikk.nntcschedule"
         minSdk = 24
         targetSdk = 37
-        versionCode = 36
-        versionName = "3.1.1-dev.1"
+        versionCode = 37
+        versionName = "3.1.1-dev.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
