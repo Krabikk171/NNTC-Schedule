@@ -2,6 +2,7 @@ package ru.krabikk.nntcschedule.v3
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -16,6 +17,14 @@ class GroupScheduleDiffTest {
     private fun compare(old: List<GroupLessonSnapshot>, next: List<GroupLessonSnapshot>,
                         oldQuality: String? = good, nextQuality: String? = good) =
         GroupScheduleDiff.compare("2ТМ-25-1", oldQuality, nextQuality, old, next)
+
+    @Test fun legacyNotificationRequiresChangesAndTheSameSelection() {
+        val target = "2РПУ-25-1"
+        assertTrue(GroupScheduleDiff.shouldNotifyLegacy(target, target, true))
+        assertFalse(GroupScheduleDiff.shouldNotifyLegacy(target, target, false))
+        assertFalse(GroupScheduleDiff.shouldNotifyLegacy(target, "2ТМ-25-1", true))
+        assertFalse(GroupScheduleDiff.shouldNotifyLegacy("2ТМ-25-1", target, true))
+    }
 
     @Test fun unchangedScheduleHasNoNotification() {
         assertNull(compare(listOf(row(a, 1)), listOf(row(a, 1))))

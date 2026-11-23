@@ -55,6 +55,9 @@ object ScheduleTableParser {
         """(\d{1,2})\s+(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)\s+(\d{4})(?:\s*г\.)?(?:\s*\(([^)]*)\))?""",
         RegexOption.IGNORE_CASE
     )
+    private val campusLabel = Regex("""корпус,?""", RegexOption.IGNORE_CASE)
+    private val campusNumber = Regex("""\d{1,4}[а-яА-Я]?""")
+    private val strayCampus = Regex("""(?i)(?:^|\s)корпус,(?:\s|$)""")
     private val roomRegex = Regex("""^(?:каб\.?\s*|ауд\.?\s*)?(?:\d{1,4}(?:\s*/\s*\d{1,4})?|с\s*/\s*з|спортзал|мастерская)$""", RegexOption.IGNORE_CASE)
     private val teacherRegex = Regex("""(?u)[А-ЯЁ][а-яё-]+\s+[А-ЯЁ]\.[А-ЯЁ]\.?$""")
     private val monthNames = listOf("января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря")
@@ -175,9 +178,9 @@ object ScheduleTableParser {
         val days = collected.values.toList()
         if (strict && days.any { it.lessons.isEmpty() }) return ParseResult(emptyList(), warnings,
             "Не найдены пары группы $group для одного или нескольких дней. Старое расписание сохранено.")
-        if (strict && days.flatMap { it.lessons }.any { it.subject.isBlank() || it.time.isBlank() })
+        if (strict && days.flatMap { it.lessons }.any { it.subject.isBlank() || it.time.isBlank() || strayCampus.containsMatchIn(it.subject) })
             return ParseResult(emptyList(), warnings,
-                "Часть занятий не содержит предмет или время. Старое расписание сохранено.")
+                "Не удалось надёжно отделить предмет, время и кабинет. Старое расписание сохранено.")
         return ParseResult(days, warnings)
     }
 
@@ -456,7 +459,7 @@ object ScheduleTableParser {
                     if (rest.isNotBlank()) blocks += CellText(x, line.y, rest)
                     continue
                 }
-                if (x < lane && (value.matches(Regex("""[\d:.,\s–—-]+""")))) {
+                if (x < lane && clockRegex.containsMatchIn(value) && (value.matches(Regex("""[\d:.,\s–—-]+""")))) {
                     for (clock in clockRegex.findAll(value)) {
                         val hh = clock.groupValues[1].toIntOrNull() ?: continue
                         val mm = clock.groupValues[2].toIntOrNull() ?: continue
@@ -471,9 +474,17 @@ object ScheduleTableParser {
             val clocks = candidateClocks.sortedBy { it.first }.map { it.second }.distinct()
             if (clocks.size >= 2 && clocks[0] < clocks[1]) time = "${clocks[0]}–${clocks[1]}"
         }
-        var room = ""
+        // In a narrow room column the campus, label and room occupy three lines.
+        val marker = blocks.singleOrNull { it.value.trim().matches(campusLabel) }
+        val campusPieces = if (marker == null) emptyList() else blocks.filter {
+            abs(it.x - marker.x) <= 12f && abs(it.y - marker.y) <= 10f &&
+                (it == marker || it.value.trim().matches(campusNumber))
+        }.sortedBy { it.y }
+        val campus = campusPieces.takeIf { it.size == 3 && it[1] == marker }
+        var room = campus?.let { "${it.first().value.trim()} корпус, ${it.last().value.trim()}" }.orEmpty()
         val content = mutableListOf<CellText>()
         for (block in blocks) {
+            if (campus != null && block in campus) continue
             val clean = block.value.trim()
             if (room.isEmpty() && roomRegex.matches(clean)) {
                 room = clean.replace(Regex("""(?i)^(каб\.?|ауд\.?)\s*"""), "")

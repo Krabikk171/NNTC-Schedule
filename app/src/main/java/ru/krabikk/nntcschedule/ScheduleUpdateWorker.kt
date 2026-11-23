@@ -17,7 +17,12 @@ class ScheduleUpdateWorker(
     workerParams
 ) {
 
+    private val notificationSource: String
+        get() = if (ScheduleWorkScheduler.PERIODIC_TAG in tags) "Автопроверка расписания" else "Запуск Worker"
+
     override suspend fun doWork(): Result {
+        val periodic = ScheduleWorkScheduler.PERIODIC_TAG in tags
+        if (periodic) SettingsRepository.recordPeriodicAttempt(applicationContext)
 
         Log.d(
             "SCHEDULE_WORKER",
@@ -244,6 +249,7 @@ class ScheduleUpdateWorker(
 
             is ScheduleUpdateResult.Success -> {
 
+                if (periodic) SettingsRepository.recordPeriodicSuccess(applicationContext)
                 SettingsRepository.setLastCheckTime(
                     applicationContext
                 )
@@ -336,8 +342,10 @@ class ScheduleUpdateWorker(
 
                 // Notify only about the currently selected group.
                 // No notifications on first import or dubious group extraction.
-                if (activeGroup == "2РПУ-25-1" && hasChanges) {
+                if (GroupScheduleDiff.shouldNotifyLegacy(activeGroup,
+                        SettingsRepository.getSelectedGroup(applicationContext).first(), hasChanges)) {
                     NotificationHelper.showScheduleChangedNotification(
+                        source = notificationSource,
                         context = applicationContext,
                         title = buildGroupedNotificationTitle(result),
                         text = buildGroupedNotificationText(result)
@@ -454,6 +462,7 @@ class ScheduleUpdateWorker(
 
             is ScheduleUpdateResult.NoChanges -> {
 
+                if (periodic) SettingsRepository.recordPeriodicSuccess(applicationContext)
                 SettingsRepository.setLastCheckTime(applicationContext)
                 val activeGroup = SettingsRepository.getSelectedGroup(applicationContext).first()
                 val groupChanges = result.selectedGroupChanges
@@ -1266,6 +1275,7 @@ class ScheduleUpdateWorker(
         if (changes == null || !changes.hasChanges) return
         if (SettingsRepository.getSelectedGroup(applicationContext).first() != changes.group) return
         NotificationHelper.showScheduleChangedNotification(
+            source = notificationSource,
             context = applicationContext,
             title = "Изменения расписания · ${changes.group}",
             text = changes.describe()

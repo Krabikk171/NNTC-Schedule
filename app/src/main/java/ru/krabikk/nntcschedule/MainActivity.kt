@@ -63,6 +63,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -489,15 +490,6 @@ fun ScheduleScreen() {
     // Настройки
     // ---------------------------------------------------------
 
-    val checkInterval by SettingsRepository
-        .getCheckInterval(
-            context
-        )
-        .collectAsState(
-            initial = 30L
-        )
-
-
     // ---------------------------------------------------------
     // Время последней проверки / изменения
     // ---------------------------------------------------------
@@ -642,19 +634,11 @@ fun ScheduleScreen() {
     // Запуск / обновление фоновой проверки
     // ---------------------------------------------------------
 
-    LaunchedEffect(
-        checkInterval
-    ) {
-
-        ScheduleWorkScheduler.schedule(
-            context =
-                context,
-
-            intervalMinutes =
-                checkInterval
-        )
+    LaunchedEffect(context) {
+        SettingsRepository.getCheckInterval(context).distinctUntilChanged().collect { interval ->
+            ScheduleWorkScheduler.schedule(context, interval)
+        }
     }
-
 
     // ---------------------------------------------------------
     // Наблюдение за БД
@@ -774,6 +758,7 @@ fun ScheduleScreen() {
                     downloadStatus = "Проверяю расписание..."
                     scope.launch {
                         try {
+                            SettingsRepository.recordManualAttempt(context)
                             val result = withContext(Dispatchers.IO) {
                                 ScheduleRepository.updateSchedule(
                                     context = context,
@@ -785,7 +770,6 @@ fun ScheduleScreen() {
                             }
                             when (result) {
                                 is ScheduleUpdateResult.Success -> {
-                                    parsedDays = result.days
                                     SettingsRepository.setLastCheckTime(context)
                                     val selectedChanged = if (selectedGroup == "2РПУ-25-1") {
                                         result.changes.isNotEmpty() || result.newDays.isNotEmpty() || result.removedDays.isNotEmpty()
@@ -801,8 +785,6 @@ fun ScheduleScreen() {
                                     } else buildManualUpdateStatus(result)
                                 }
                                 is ScheduleUpdateResult.NoChanges -> {
-                                    // Non-legacy catalog updates return no legacy days. Keep saved legacy data.
-                                    if (selectedGroup == "2РПУ-25-1") parsedDays = result.days
                                     SettingsRepository.setLastCheckTime(context)
                                     val selectedChanged = GroupScheduleDiff.relevantForSelection(
                                         selectedGroup, result.selectedGroupChanges

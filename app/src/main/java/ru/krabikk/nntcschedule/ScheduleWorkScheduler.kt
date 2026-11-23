@@ -12,6 +12,7 @@ import java.util.concurrent.TimeUnit
 
 object ScheduleWorkScheduler {
 
+    internal const val PERIODIC_TAG = "periodic_schedule_sync"
     private const val WORK_NAME =
         "schedule_auto_update"
 
@@ -58,6 +59,7 @@ object ScheduleWorkScheduler {
                 intervalMinutes,
                 TimeUnit.MINUTES
             )
+                .addTag(PERIODIC_TAG)
                 .setConstraints(
                     constraints
                 )

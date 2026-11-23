@@ -53,6 +53,27 @@ object SettingsRepository {
         )
 
     // The latest ATTEMPT may fail; LAST_CHECK_TIME below tracks only success.
+    private val MANUAL_ATTEMPT = longPreferencesKey("manual_schedule_attempt")
+    private val PERIODIC_ATTEMPT = longPreferencesKey("periodic_schedule_attempt")
+    private val PERIODIC_SUCCESS = longPreferencesKey("periodic_schedule_success")
+
+    suspend fun recordManualAttempt(context: Context) {
+        context.settingsDataStore.edit { it[MANUAL_ATTEMPT] = System.currentTimeMillis() }
+    }
+
+    suspend fun recordPeriodicAttempt(context: Context) {
+        context.settingsDataStore.edit { it[PERIODIC_ATTEMPT] = System.currentTimeMillis() }
+    }
+
+    suspend fun recordPeriodicSuccess(context: Context) {
+        context.settingsDataStore.edit { it[PERIODIC_SUCCESS] = System.currentTimeMillis() }
+    }
+
+    data class ScheduleCheckTimes(val manual: Long?, val periodic: Long?, val success: Long?)
+    fun scheduleCheckTimes(context: Context) = context.settingsDataStore.data.map {
+        ScheduleCheckTimes(it[MANUAL_ATTEMPT], it[PERIODIC_ATTEMPT], it[PERIODIC_SUCCESS])
+    }
+
     private val LAST_SYNC_OUTCOME = stringPreferencesKey("last_sync_outcome")
     private val LAST_SYNC_TIME = longPreferencesKey("last_sync_time")
     private val LAST_SYNC_DETAILS = stringPreferencesKey("last_sync_details")

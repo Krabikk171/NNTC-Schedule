@@ -95,6 +95,7 @@ private suspend fun captureReleaseDiagnostics(context: Context): DiagnosticSnaps
         val lessons = ScheduleDatabase.getInstance(context).scheduleDao().getAll()
         val interval = SettingsRepository.getCheckInterval(context).first()
         val lastSuccessful = SettingsRepository.getLastCheckTime(context).first()
+        val times = SettingsRepository.scheduleCheckTimes(context).first()
         val sync = SettingsRepository.getLastSyncReport(context).first()
         val notificationAllowed = notificationPermissionGranted(context)
 
@@ -104,7 +105,7 @@ private suspend fun captureReleaseDiagnostics(context: Context): DiagnosticSnaps
                 .get()
         }
         val workInfos = workLookup.getOrNull().orEmpty()
-        val activePeriodic = workInfos.count { info ->
+        val activePeriodic = workInfos.filter { info ->
             info.state == WorkInfo.State.ENQUEUED ||
                 info.state == WorkInfo.State.RUNNING ||
                 info.state == WorkInfo.State.BLOCKED
@@ -123,6 +124,9 @@ private suspend fun captureReleaseDiagnostics(context: Context): DiagnosticSnaps
         val dateCount = lessons.map { it.date }.toSet().size
 
         val checks = listOf(
+            DiagnosticCheck("Ручная попытка", diagnosticTime(times.manual), null),
+            DiagnosticCheck("Периодическая попытка", diagnosticTime(times.periodic), null),
+            DiagnosticCheck("Успешная периодическая проверка", diagnosticTime(times.success), null),
             DiagnosticCheck(
                 "Сохранённое расписание",
                 if (lessons.isEmpty()) "Занятий пока нет в базе" else
@@ -146,13 +150,13 @@ private suspend fun captureReleaseDiagnostics(context: Context): DiagnosticSnaps
                 when {
                     interval < 15L -> "Отключена в настройках ($interval мин)"
                     workLookup.isFailure -> "Не удалось запросить сведения WorkManager"
-                    activePeriodic > 0 -> "Задача зарегистрирована (это не подтверждает время запуска)"
+                    activePeriodic.isNotEmpty() -> activePeriodic.joinToString { "${it.state}, id=${it.id}, интервал $interval мин" }
                     else -> "Активная периодическая задача не найдена"
                 },
                 when {
                     interval < 15L -> null
                     workLookup.isFailure -> false
-                    else -> activePeriodic > 0
+                    else -> activePeriodic.isNotEmpty()
                 }
             ),
             DiagnosticCheck(
@@ -177,7 +181,7 @@ private suspend fun captureReleaseDiagnostics(context: Context): DiagnosticSnaps
             recentSuccess = diagnosticTime(lastSuccessful),
             lessonCount = lessons.size,
             dateCount = dateCount,
-            registeredWorkCount = activePeriodic,
+            registeredWorkCount = activePeriodic.size,
             intervalMinutes = interval
         )
     }

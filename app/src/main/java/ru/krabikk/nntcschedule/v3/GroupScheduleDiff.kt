@@ -25,6 +25,9 @@ data class GroupScheduleChangeSet(
 }
 
 object GroupScheduleDiff {
+    fun shouldNotifyLegacy(selectionAtComparison: String, currentSelection: String, changed: Boolean): Boolean =
+        changed && selectionAtComparison == "2РПУ-25-1" && currentSelection == selectionAtComparison
+
     const val TRUSTED = "STRUCTURAL_OK"
 
     /** This catalog notification belongs only to the active non-legacy profile. */

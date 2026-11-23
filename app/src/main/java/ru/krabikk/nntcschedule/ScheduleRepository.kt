@@ -867,6 +867,8 @@ object ScheduleRepository {
                     selectedGroupChanges = selectedGroupChanges
                 )
 
+            } catch (cancel: kotlinx.coroutines.CancellationException) {
+                throw cancel
             } catch (e: Exception) {
 
                 Log.e(

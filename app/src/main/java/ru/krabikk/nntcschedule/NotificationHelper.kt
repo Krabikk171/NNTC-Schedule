@@ -80,13 +80,15 @@ object NotificationHelper {
     fun showScheduleChangedNotification(
         context: Context,
         title: String,
-        text: String
+        text: String,
+        source: String = "Тест уведомлений"
     ) {
 
         showScheduleChangedNotifications(
             context =
                 context,
 
+            source = source,
             notifications =
                 listOf(
                     ScheduleNotification(
@@ -107,7 +109,8 @@ object NotificationHelper {
     fun showScheduleChangedNotifications(
         context: Context,
         notifications:
-        List<ScheduleNotification>
+        List<ScheduleNotification>,
+        source: String
     ) {
 
         if (
@@ -215,6 +218,7 @@ object NotificationHelper {
                 .setSmallIcon(
                     android.R.drawable.ic_dialog_info
                 )
+                .setSubText(source)
                 .setContentTitle(
                     title
                 )
