@@ -13,6 +13,15 @@ object Changelog {
     val versions =
         listOf(
             ChangelogVersion(
+                version = "3.1.1-dev.3",
+                title = "Кабинеты и фоновая проверка расписания",
+                changes = listOf(
+                    "Исправлен разбор корпуса и кабинета в многострочной ячейке PDF.",
+                    "В диагностике показаны состояние фоновой задачи и время её попыток и успешных проверок.",
+                    "Уведомления об изменении расписания показывают источник проверки."
+                )
+            ),
+            ChangelogVersion(
                 version = "3.1.1-dev.2",
                 title = "Тест обновления через GitHub",
                 changes = listOf(
@@ -492,5 +501,5 @@ object Changelog {
 
 
     const val CURRENT_VERSION =
-        "3.1.1-dev.2"
+        "3.1.1-dev.3"
 }
