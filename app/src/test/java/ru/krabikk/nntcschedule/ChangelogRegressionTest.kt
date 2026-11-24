@@ -7,7 +7,7 @@ import org.junit.Test
 class ChangelogRegressionTest {
     @Test
     fun releaseVersionMatchesTopEntry() {
-        assertEquals("3.1.1-dev.3", Changelog.CURRENT_VERSION)
+        assertEquals("3.1.1", Changelog.CURRENT_VERSION)
         assertEquals(Changelog.CURRENT_VERSION, Changelog.versions.first().version)
         assertTrue(Changelog.versions.first().changes.any { it.isNotBlank() })
         assertTrue(Changelog.versions.any { it.version == "3.0.0" && it.changes.size >= 18 })
@@ -21,7 +21,7 @@ class ChangelogRegressionTest {
             "3.0.0-alpha.4", "3.0.0-alpha.5", "3.0.0-alpha.6",
             "3.0.0-alpha.6.1", "3.0.0-alpha.6.2", "3.0.0-alpha.6.3",
             "3.0.0-beta.1", "3.0.0-beta.1.1",
-            "3.1.1-dev.2", "3.1.1-dev.1", "3.1.0-alpha.8.5", "3.1.0-beta.1", "3.1.0"
+            "3.1.1-dev.3", "3.1.1-dev.2", "3.1.1-dev.1", "3.1.0-alpha.8.5", "3.1.0-beta.1", "3.1.0"
         ).forEach { assertTrue("Missing changelog for $it", it in all) }
     }
 }

@@ -70,6 +70,22 @@ class AppUpdateMetadataTest {
         return json.toString()
     }
 
+    @Test fun stableReleaseUpdatesDev3InBothChannels() = runBlocking {
+        for (channel in listOf(AppUpdateChannel.STABLE, AppUpdateChannel.BETA)) {
+            suspend fun checkInstalled(code: Long) =
+                AppUpdateRepository.checkReleases(channel, code) { url, _ ->
+                    when {
+                        url.endsWith("/update.json") -> manifest(39).toString()
+                        url.endsWith("/releases/latest") -> releaseWithManifest()
+                        url.contains("/releases?") -> "[" + releaseWithManifest() + "]"
+                        else -> error("Unexpected URL: $url")
+                    }
+                }
+            assertEquals(39L, checkInstalled(38)?.versionCode)
+            assertNull(checkInstalled(39))
+        }
+    }
+
     @Test fun offlineCheckSkipsNetworkAndNextCheckCanSucceed() {
         assertThrows(IOException::class.java) {
             runBlocking {
